@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+    id 'antlr'
+}
+
+group 'hide212131'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    antlr group: 'org.antlr', name: 'antlr4', version: '4.8'
+    // https://mvnrepository.com/artifact/org.antlr/symtab
+    compile group: 'org.antlr', name: 'symtab', version: '1.0.8'
+}
