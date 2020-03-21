@@ -1,4 +1,13 @@
+// https://github.com/bkiers/tiny-language-antlr4.git
+
 grammar TL;
+
+//
+varDecl
+ : Identifier
+ ;
+//
+
 
 parse
  : block EOF
@@ -17,7 +26,7 @@ statement
  ;
 
 assignment
- : Identifier indexes? '=' expression
+ : varDecl indexes? '=' expression
  ;
 
 functionCall
@@ -49,7 +58,7 @@ functionDecl
  ;
 
 forStatement
- : For Identifier '=' expression To expression Do block End
+ : For varDecl '=' expression To expression Do block End
  ;
 
 whileStatement
@@ -57,7 +66,7 @@ whileStatement
  ;
 
 idList
- : Identifier ( ',' Identifier )*
+ : varDecl ( ',' varDecl )*
  ;
 
 exprList
@@ -81,7 +90,7 @@ expression
  | Null                                                 #nullExpression
  | functionCall indexes?                                #functionCallExpression
  | list indexes?                                        #listExpression
- | Identifier indexes?                                  #identifierExpression
+ | Identifier indexes?                                  #VarExpression
  | String indexes?                                      #stringExpression
  | '(' expression ')' indexes?                          #expressionExpression
  | Input '(' String? ')'                                #inputExpression
