@@ -1,6 +1,15 @@
 plugins {
     id 'java'
     id 'antlr'
+    id "application"
+}
+
+apply plugin : "java"
+ext {
+    javaMainClass = "Indexer"
+}
+application {
+    mainClassName = javaMainClass
 }
 
 group 'hide212131'
@@ -16,4 +25,15 @@ dependencies {
     antlr group: 'org.antlr', name: 'antlr4', version: '4.8'
     // https://mvnrepository.com/artifact/org.antlr/symtab
     compile group: 'org.antlr', name: 'symtab', version: '1.0.8'
+    compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.10.3'
+    compile files('sourcetrail/SourcetrailDB.jar')
+}
+
+run {
+    args "--database-file-path=${projectDir}/${project.name}.srctrldb",
+         "--source-dir-path=${projectDir}/examples/"
+}
+
+tasks.withType(JavaExec) {
+    systemProperty "java.library.path", file("sourcetrail")
 }
