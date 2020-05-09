@@ -1,4 +1,4 @@
-package name;
+package sourcetrail;
 
 public class NameElement {
     public String prefix = "";

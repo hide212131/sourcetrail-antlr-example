@@ -1,3 +1,5 @@
 /.idea/
 /.gradle/
 /build/
+/src/main/java/tl/generated/
+/bin/

@@ -6,7 +6,8 @@ plugins {
 
 apply plugin : "java"
 ext {
-    javaMainClass = "Indexer"
+    javaMainClass = "tl.sourcetrail.TinyIndexer"
+//    javaMainClass = "IndexerOld"
 }
 application {
     mainClassName = javaMainClass
@@ -27,13 +28,23 @@ dependencies {
     compile group: 'org.antlr', name: 'symtab', version: '1.0.8'
     compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.10.3'
     compile files('sourcetrail/SourcetrailDB.jar')
+    implementation 'org.jetbrains:annotations:15.0'
 }
 
 run {
-    args "--database-file-path=${projectDir}/${project.name}.srctrldb",
+    args "--database-file-path=${projectDir}/sourcetrail/${project.name}.srctrldb",
          "--source-dir-path=${projectDir}/examples/"
 }
 
 tasks.withType(JavaExec) {
     systemProperty "java.library.path", file("sourcetrail")
+}
+
+ext.antlr = [
+        //grammarpackage: "tl.generated",
+        destinationDir: "src/main/java/tl/generated"
+]
+generateGrammarSource {
+    outputDirectory = file(new File("${antlr.destinationDir}"))
+    arguments = ["-package", "tl.generated",  "-listener", "-no-visitor"].flatten()
 }
