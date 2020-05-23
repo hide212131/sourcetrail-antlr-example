@@ -1,26 +1,42 @@
 package common;
 
-import org.antlr.runtime.Token;
 import org.antlr.runtime.tree.BaseTree;
 import org.antlr.runtime.tree.Tree;
 import org.antlr.symtab.Symbol;
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class SymbolAST extends BaseTree {
-    public SymbolAST parent;
-    public Symbol symbol;
-    //public Scope scope;
-    public ParserRuleContext ctx;
+    @NotNull SymbolAST parent;
+    @NotNull public Symbol symbol;
+    @NotNull public ParserRuleContext ctx;
+    @NotNull SymbolASTTable table;
 
-    public SymbolAST getFileSymbolAST() {
+    SymbolAST(Symbol symbol, ParserRuleContext ctx) {
+        this.symbol = symbol;
+        this.ctx = ctx;
+    }
+
+    @NotNull
+    public FileAST getFile() {
         SymbolAST ast = this;
-        while (! (ast.symbol instanceof FileSymbol)) {
+        while (! (ast instanceof FileAST)) {
            ast = (SymbolAST) getParent();
            if (ast == null) {
                throw new IllegalStateException("FileSymbol not found.");
            }
         }
-        return ast;
+        return (FileAST)ast;
+    }
+
+    @Override
+    public void addChild(Tree t) {
+        super.addChild(t);
+        table.add((SymbolAST) t);
     }
 
     @Override
@@ -38,7 +54,14 @@ public class SymbolAST extends BaseTree {
         if ( isNil() ) {
             return "nil";
         }
-        return symbol.getName();
+        List<String> l = new ArrayList<>();
+        SymbolAST ast = this;
+        while(ast != null && !(ast instanceof FileAST)) {
+            l.add(ast.symbol.getName());
+            ast = (SymbolAST) ast.getParent();
+        }
+        Collections.reverse(l);
+        return (ast != null ? ast.symbol : "") + "#" + String.join(".", l);
     }
 
     @Override

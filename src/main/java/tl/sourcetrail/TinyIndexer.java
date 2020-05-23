@@ -1,17 +1,17 @@
 package tl.sourcetrail;
 
 import com.sourcetrail.DefinitionKind;
+import com.sourcetrail.ReferenceKind;
 import com.sourcetrail.SymbolKind;
 import com.sourcetrail.sourcetraildb;
-import common.DefPhaseAdapter;
-import common.FileSymbol;
-import common.SymbolAST;
-import common.SymbolTable;
+import common.*;
 import org.antlr.symtab.FunctionSymbol;
+import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
+import org.jetbrains.annotations.NotNull;
 import sourcetrail.NameElement;
 import sourcetrail.NameHierarchy;
-import tl.TinyDefPhase;
+import tl.TinySymbolSolver;
 import tl.generated.TLParser;
 
 import java.io.IOException;
@@ -68,7 +68,8 @@ public class TinyIndexer {
     public void process() throws IOException {
         beginTransaction();
 
-        SymbolTable symtab = new SymbolTable();
+        SymbolASTTable symtab = new SymbolASTTable();
+        Map<SymbolAST, Integer> sourcetrailNames = new IdentityHashMap<>();
 
         FileSystem fs = FileSystems.getDefault();
         PathMatcher matcher = fs.getPathMatcher("glob:**/*.tl");
@@ -76,7 +77,7 @@ public class TinyIndexer {
         Files.walk(startDir).filter(matcher::matches).forEach(file -> {
             System.out.println("Indexing " + file);
             try {
-                processFile(file.toString(), symtab);
+                processFile(file.toString(), symtab, sourcetrailNames);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -112,11 +113,16 @@ public class TinyIndexer {
         }
     }
 
-    public void processFile(String file, SymbolTable symtab) throws IOException {
-        // parse
-        TinyDefPhase defPhase = new TinyDefPhase(symtab);
-        defPhase.setAdapter(new TLDefListener());
-        defPhase.parse(file);
+    public void processFile(String file, SymbolASTTable symtab, Map<SymbolAST, Integer> sourcetrailNames) throws IOException {
+
+        TinySymbolSolver symbolSolver = new TinySymbolSolver();
+        Register r = new Register(sourcetrailNames);
+
+        DefPhase defPhase = new DefPhase(symbolSolver);
+        FileAST fileAST = defPhase.parse(file, symtab, r);
+
+        RefPhase refPhase = new RefPhase(symbolSolver);
+        refPhase.walk(fileAST, symtab, r);
     }
 
 
@@ -134,31 +140,39 @@ public class TinyIndexer {
         System.out.println("done");
     }
 
-    public static class TLDefListener implements DefPhaseAdapter {
+    public static class Register implements DefPhaseAdapter, RefPhaseAdapter {
 
-        Map<SymbolAST, Integer> sourcetrailNames = new IdentityHashMap<>();
-
-        public void defined(SymbolAST ast) {
-            if (ast.symbol instanceof FileSymbol) {
-                defFile((FileSymbol)ast.symbol, ast);
-            }
-            else if (ast.symbol instanceof FunctionSymbol) {
-                defFunction((FunctionSymbol)ast.symbol, ast);
-            }
+        Map<SymbolAST, Integer> sourcetrailNames;
+        public Register(Map<SymbolAST, Integer> sourcetrailNames) {
+            this.sourcetrailNames = sourcetrailNames;
         }
 
-        public void defFile(FileSymbol f, SymbolAST ast){
+        @Override
+        public void defined(SymbolAST ast) {
+            int id;
+            if (ast instanceof FileAST) {
+                id = defFile((FileSymbol)ast.symbol, ast);
+            }
+            else if (ast.symbol instanceof FunctionSymbol) {
+                id = defFunction(ast);
+            } else {
+                throw new IllegalStateException();
+            }
+            sourcetrailNames.put(ast, id);
+        }
+
+        public int defFile(@NotNull FileSymbol f, SymbolAST ast){
             // sourcetrail record file
             int fileId = sourcetraildb.recordFile(f.getName());
             sourcetraildb.recordFileLanguage(fileId, "");
             if (sourcetraildb.getLastError().length() > 0) {
                 throw new RuntimeException(sourcetraildb.getLastError());
             }
-            sourcetrailNames.put(ast, fileId);
+            return fileId;
         }
 
-        public void defFunction(FunctionSymbol f, SymbolAST ast){
-            int fileId = sourcetrailNames.get(ast.getFileSymbolAST());
+        public int defFunction(@NotNull SymbolAST ast){
+            int fileId = sourcetrailNames.get(ast.getFile());
             TLParser.FunctionDeclContext ctx = (TLParser.FunctionDeclContext) ast.ctx;
             String s = getSignature(ast);
             int symbolId = sourcetraildb.recordSymbol(s);
@@ -176,6 +190,7 @@ public class TinyIndexer {
             if (sourcetraildb.getLastError().length() > 0) {
                 throw new RuntimeException(sourcetraildb.getLastError());
             }
+            return symbolId;
         }
 
         private static String getSignature(SymbolAST symbolAST) {
@@ -187,9 +202,7 @@ public class TinyIndexer {
         private static void createNameHierarchy(SymbolAST symbolAST, NameHierarchy nameHierarchy) {
              if (symbolAST == null) {
                  throw new IllegalStateException("FileSymbol not found.");
-             } else if (symbolAST.symbol instanceof FileSymbol) {
-                 // nothing
-             } else {
+             } else if (! (symbolAST instanceof FileAST)) {
                  SymbolAST parent = (SymbolAST) symbolAST.getParent();
                  createNameHierarchy(parent, nameHierarchy);
                  NameElement nameElement = new NameElement();
@@ -197,5 +210,37 @@ public class TinyIndexer {
                  nameHierarchy.push(nameElement);
              }
         }
+
+        @Override
+        public void refVisited(ParserRuleContext prc, SymbolAST fromAst, SymbolAST toAst) {
+            if (toAst.symbol instanceof FunctionSymbol) {
+                functionRef(prc, fromAst, toAst);
+            }
+        }
+
+        public void functionRef(ParserRuleContext prc, SymbolAST fromAst, SymbolAST toAst) {
+            TLParser.IdentifierFunctionCallContext ctx = (TLParser.IdentifierFunctionCallContext) prc;
+            int contextSymbolId = sourcetrailNames.get(fromAst);
+            int toId = sourcetrailNames.get(toAst);
+
+            int referenceId = sourcetraildb.recordReference(
+                    contextSymbolId,
+                    toId,
+                    ReferenceKind.REFERENCE_CALL
+            );
+
+            int fileId = sourcetrailNames.get(fromAst.getFile());
+            Token token = ctx.Identifier().getSymbol();
+            sourcetraildb.recordReferenceLocation(referenceId, fileId,
+                    token.getLine(),
+                    token.getCharPositionInLine() + 1,
+                    token.getLine(),
+                    token.getCharPositionInLine() + token.getText().length()
+            );
+            if (sourcetraildb.getLastError().length() > 0) {
+                throw new RuntimeException(sourcetraildb.getLastError());
+            }
+        }
+
     }
 }
